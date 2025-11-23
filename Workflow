@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Install tauri-cli
+        run: |
+          cargo install tauri-cli --locked || echo "tauri-cli install skipped or already installed"
+
+      - name: Check for package.json
+        run: |
+          if [ -f package.json ]; then echo "package_json_exists=true" >> $GITHUB_ENV; else echo "package_json_exists=false" >> $GITHUB_ENV; fi
+
+      - name: Install frontend dependencies
+        if: env.package_json_exists == 'true'
+        run: |
+          npm ci
+
+      - name: Build frontend (if present)
+        if: env.package_json_exists == 'true'
+        run: |
+          npm run build --if-present
+
+      - name: Add rustfmt & clippy
+        run: |
+          rustup component add clippy rustfmt || true
+
+      - name: Run fmt (check)
+        run: |
+          cargo fmt --all -- --check || true
+
+      - name: Run clippy (non-blocking)
+        run: |
+          cargo clippy --all-targets --all-features -- -D warnings || true
+
+      - name: Run Rust tests
+        run: |
+          cargo test --workspace --all-features --verbose
+
+      - name: Build release
+        run: |
+          cargo build --workspace --release
+
+      - name: Run cargo-audit (best-effort)
+        run: |
+          cargo install cargo-audit || true
+          cargo audit || true
